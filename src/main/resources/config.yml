@@ -1,0 +1,36 @@
+# VillagerDiscountSync configuration
+#
+# How it works:
+#   Vanilla only grants the "cured" gossip (and therefore the price discount) to the
+#   player who threw the weakness potion + golden apple. This plugin mirrors the best
+#   cure gossip on a villager to everyone:
+#     - on cure: immediately to all online players
+#     - on interact: to whoever right-clicks the villager (covers players that were
+#       offline or had never joined when the cure happened)
+
+# Apply the discount to all online players the moment a zombie villager finishes curing.
+sync-on-cure: true
+
+# Apply the discount to a player right before they open the trade menu.
+# This is what makes the discount work for offline / never-seen players.
+sync-on-interact: true
+
+# Remember the cure on the villager itself (persistent data), so the discount survives
+# even after the minor (decaying) gossip expires. The major gossip never decays in
+# vanilla, so this mostly protects the extra minor-positive bonus.
+persist-discounts: true
+
+# Gossip values to fall back to if the villager somehow has no cure gossip one tick
+# after curing (vanilla grants major-positive 20 and minor-positive 25 per cure).
+fallback:
+  major-positive: 20
+  minor-positive: 25
+
+# Broadcast a message when a villager is cured. MiniMessage format.
+# Placeholders: <curer> (player name, or "Someone"), <synced> (number of online players synced)
+announce:
+  enabled: true
+  message: '<green><curer> cured a villager! The discounted prices are now shared with everyone.</green>'
+
+# Log every sync action to the console.
+debug: false

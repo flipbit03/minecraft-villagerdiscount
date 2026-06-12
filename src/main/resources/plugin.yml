@@ -1,0 +1,19 @@
+name: VillagerDiscountSync
+version: '${version}'
+main: dev.cadu.villagerdiscount.VillagerDiscountPlugin
+api-version: '26.1.2'
+description: Syncs cured-villager trade discounts to every player - online, offline, or not yet joined.
+author: cadu
+website: https://github.com/cadu
+
+commands:
+  villagerdiscount:
+    description: Manage villager discount syncing
+    usage: /<command> <info|sync|reload>
+    aliases: [vds]
+    permission: villagerdiscount.admin
+
+permissions:
+  villagerdiscount.admin:
+    description: Allows managing VillagerDiscountSync
+    default: op
