@@ -4,7 +4,7 @@ main: dev.cadu.villagerdiscount.VillagerDiscountPlugin
 api-version: '26.1.2'
 description: Syncs cured-villager trade discounts to every player - online, offline, or not yet joined.
 author: cadu
-website: https://github.com/cadu
+website: https://github.com/flipbit03/minecraft-villagerdiscount
 
 commands:
   villagerdiscount:
