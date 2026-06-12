@@ -1,4 +1,4 @@
-# VillagerDiscountSync
+# minecraft-villagerdiscount
 
 A Paper plugin (Paper **26.1.2**, Java **25**) that shares cured-villager trade discounts with
 **every** player — online, offline, or players who have never joined the server.

@@ -44,7 +44,7 @@ public final class VillagerDiscountCommand implements org.bukkit.command.Command
             }
             case "reload" -> {
                 plugin.reloadConfig();
-                sender.sendMessage(Component.text("VillagerDiscountSync config reloaded.", NamedTextColor.GREEN));
+                sender.sendMessage(Component.text("minecraft-villagerdiscount config reloaded.", NamedTextColor.GREEN));
             }
             default -> sender.sendMessage(Component.text(
                     "Unknown subcommand. Usage: /" + label + " <info|sync|reload>", NamedTextColor.RED));

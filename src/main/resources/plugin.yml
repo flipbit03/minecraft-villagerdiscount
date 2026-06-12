@@ -1,4 +1,4 @@
-name: VillagerDiscountSync
+name: minecraft-villagerdiscount
 version: '${version}'
 main: dev.cadu.villagerdiscount.VillagerDiscountPlugin
 api-version: '26.1.2'
@@ -15,5 +15,5 @@ commands:
 
 permissions:
   villagerdiscount.admin:
-    description: Allows managing VillagerDiscountSync
+    description: Allows managing minecraft-villagerdiscount
     default: op

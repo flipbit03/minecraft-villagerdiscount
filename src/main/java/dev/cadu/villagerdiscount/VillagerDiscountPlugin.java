@@ -25,7 +25,7 @@ public final class VillagerDiscountPlugin extends JavaPlugin {
             command.setTabCompleter(executor);
         }
 
-        getLogger().info("VillagerDiscountSync enabled - cured villager discounts are shared with everyone.");
+        getLogger().info("minecraft-villagerdiscount enabled - cured villager discounts are shared with everyone.");
     }
 
     public DiscountService discountService() {
