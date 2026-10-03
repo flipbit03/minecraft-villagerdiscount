@@ -1,19 +1,22 @@
 package dev.cadu.villagerdiscount.command;
 
-import com.destroystokyo.paper.entity.villager.Reputation;
-import com.destroystokyo.paper.entity.villager.ReputationType;
 import dev.cadu.villagerdiscount.DiscountService;
 import dev.cadu.villagerdiscount.VillagerDiscountPlugin;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
+import org.bukkit.ChatColor;
+import org.bukkit.FluidCollisionMode;
+import org.bukkit.GameMode;
+import org.bukkit.Location;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Villager;
+import org.bukkit.entity.Villager.ReputationType;
+import org.bukkit.util.RayTraceResult;
 
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Stream;
 
 public final class VillagerDiscountCommand implements org.bukkit.command.CommandExecutor, TabCompleter {
@@ -31,61 +34,73 @@ public final class VillagerDiscountCommand implements org.bukkit.command.Command
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length == 0) {
-            sender.sendMessage(Component.text("Usage: /" + label + " <info|sync|reload>", NamedTextColor.YELLOW));
+            sender.sendMessage(ChatColor.YELLOW + "Usage: /" + label + " <info|sync|reload>");
             return true;
         }
         switch (args[0].toLowerCase()) {
             case "info" -> info(sender);
             case "sync" -> {
                 int villagers = service.syncAllLoadedVillagers();
-                sender.sendMessage(Component.text(
-                        "Synced " + villagers + " cured villager(s) to all online players.",
-                        NamedTextColor.GREEN));
+                sender.sendMessage(ChatColor.GREEN
+                        + "Synced " + villagers + " cured villager(s) to all online players.");
             }
             case "reload" -> {
                 plugin.reloadConfig();
-                sender.sendMessage(Component.text("minecraft-villagerdiscount config reloaded.", NamedTextColor.GREEN));
+                service.validateAnnounceMessage();
+                sender.sendMessage(ChatColor.GREEN + "minecraft-villagerdiscount config reloaded.");
             }
-            default -> sender.sendMessage(Component.text(
-                    "Unknown subcommand. Usage: /" + label + " <info|sync|reload>", NamedTextColor.RED));
+            default -> sender.sendMessage(ChatColor.RED
+                    + "Unknown subcommand. Usage: /" + label + " <info|sync|reload>");
         }
         return true;
     }
 
     private void info(CommandSender sender) {
         if (!(sender instanceof Player player)) {
-            sender.sendMessage(Component.text("Only players can inspect a villager.", NamedTextColor.RED));
+            sender.sendMessage(ChatColor.RED + "Only players can inspect a villager.");
             return;
         }
-        Entity target = player.getTargetEntity(8);
+        Entity target = targetEntity(player, 8);
         if (!(target instanceof Villager villager)) {
-            sender.sendMessage(Component.text("Look at a villager (within 8 blocks) first.", NamedTextColor.RED));
+            sender.sendMessage(ChatColor.RED + "Look at a villager (within 8 blocks) first.");
             return;
         }
 
         DiscountService.CureGossip best = service.bestCureGossip(villager);
-        Reputation mine = villager.getReputation(player.getUniqueId());
-        int myMajor = mine != null ? mine.getReputation(ReputationType.MAJOR_POSITIVE) : 0;
-        int myMinor = mine != null ? mine.getReputation(ReputationType.MINOR_POSITIVE) : 0;
-        int myTrading = mine != null ? mine.getReputation(ReputationType.TRADING) : 0;
-        int myMinorNeg = mine != null ? mine.getReputation(ReputationType.MINOR_NEGATIVE) : 0;
-        int myMajorNeg = mine != null ? mine.getReputation(ReputationType.MAJOR_NEGATIVE) : 0;
+        UUID me = player.getUniqueId();
+        int myMajor = villager.getReputation(me, ReputationType.MAJOR_POSITIVE);
+        int myMinor = villager.getReputation(me, ReputationType.MINOR_POSITIVE);
+        int myTrading = villager.getReputation(me, ReputationType.TRADING);
+        int myMinorNeg = villager.getReputation(me, ReputationType.MINOR_NEGATIVE);
+        int myMajorNeg = villager.getReputation(me, ReputationType.MAJOR_NEGATIVE);
         // Vanilla weights: major +/-5, everything else +/-1. The game multiplies this
         // score by each offer's price multiplier to compute the emerald discount.
         int score = 5 * myMajor + myMinor + myTrading - myMinorNeg - 5 * myMajorNeg;
 
-        player.sendMessage(Component.text("Villager " + villager.getUniqueId(), NamedTextColor.GOLD));
-        player.sendMessage(Component.text("  Recorded cures: " + service.cureCount(villager), NamedTextColor.GRAY));
-        player.sendMessage(Component.text(
-                "  Best cure gossip: major=" + best.majorPositive() + " minor=" + best.minorPositive(),
-                NamedTextColor.GRAY));
-        player.sendMessage(Component.text(
-                "  Your gossip: major=" + myMajor + " minor=" + myMinor + " trading=" + myTrading
-                        + (myMinorNeg + myMajorNeg > 0
-                                ? " negatives=" + myMinorNeg + "/" + myMajorNeg
-                                : ""),
-                NamedTextColor.GRAY));
-        player.sendMessage(Component.text("  Your reputation score: " + score, NamedTextColor.GRAY));
+        player.sendMessage(ChatColor.GOLD + "Villager " + villager.getUniqueId());
+        player.sendMessage(ChatColor.GRAY + "  Recorded cures: " + service.cureCount(villager));
+        player.sendMessage(ChatColor.GRAY
+                + "  Best cure gossip: major=" + best.majorPositive() + " minor=" + best.minorPositive());
+        player.sendMessage(ChatColor.GRAY
+                + "  Your gossip: major=" + myMajor + " minor=" + myMinor + " trading=" + myTrading
+                + (myMinorNeg + myMajorNeg > 0
+                        ? " negatives=" + myMinorNeg + "/" + myMajorNeg
+                        : ""));
+        player.sendMessage(ChatColor.GRAY + "  Your reputation score: " + score);
+    }
+
+    /**
+     * Spigot stand-in for Paper's {@code getTargetEntity(maxDistance)}: the nearest entity
+     * on the player's line of sight (spectators and the player excluded), or null if a
+     * block is hit first.
+     */
+    private static Entity targetEntity(Player player, int maxDistance) {
+        Location eye = player.getEyeLocation();
+        RayTraceResult hit = player.getWorld().rayTrace(eye, eye.getDirection(), maxDistance,
+                FluidCollisionMode.NEVER, false, 0.0,
+                entity -> entity != player
+                        && !(entity instanceof Player other && other.getGameMode() == GameMode.SPECTATOR));
+        return hit != null ? hit.getHitEntity() : null;
     }
 
     @Override

@@ -26,7 +26,8 @@ fallback:
   major-positive: 20
   minor-positive: 25
 
-# Broadcast a message when a villager is cured. MiniMessage format.
+# Broadcast a message when a villager is cured. MiniMessage format: colors (<green>, <#55ff55>),
+# decorations (<bold>, <italic>, ...), <reset> and <newline>; other tags are shown as plain text.
 # Placeholders: <curer> (player name, or "Someone"), <synced> (number of online players synced)
 announce:
   enabled: true

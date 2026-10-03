@@ -1,14 +1,15 @@
 package dev.cadu.villagerdiscount;
 
-import com.destroystokyo.paper.entity.villager.Reputation;
-import com.destroystokyo.paper.entity.villager.ReputationType;
+import org.bukkit.ChatColor;
 import org.bukkit.NamespacedKey;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Villager;
+import org.bukkit.entity.Villager.ReputationType;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -17,7 +18,8 @@ import java.util.UUID;
  * Vanilla stores gossip per (villager, player-uuid) pair, which is why only the curer
  * gets the discount. Mirroring the best MAJOR_POSITIVE / MINOR_POSITIVE values onto a
  * player's own gossip entry makes the game compute the exact same discounted prices
- * for them, with no NMS or packet hackery.
+ * for them. Gossip is read and written through Spigot's villager reputation API; only
+ * listing which uuids a villager has gossip about needs {@link GossipTargets}.
  */
 public final class DiscountService {
 
@@ -29,12 +31,14 @@ public final class DiscountService {
     }
 
     private final VillagerDiscountPlugin plugin;
+    private final GossipTargets gossipTargets;
     private final NamespacedKey majorKey;
     private final NamespacedKey minorKey;
     private final NamespacedKey cureCountKey;
 
-    public DiscountService(VillagerDiscountPlugin plugin) {
+    public DiscountService(VillagerDiscountPlugin plugin, GossipTargets gossipTargets) {
         this.plugin = plugin;
+        this.gossipTargets = gossipTargets;
         this.majorKey = new NamespacedKey(plugin, "cured_major_positive");
         this.minorKey = new NamespacedKey(plugin, "cured_minor_positive");
         this.cureCountKey = new NamespacedKey(plugin, "cure_count");
@@ -61,6 +65,44 @@ public final class DiscountService {
                 "<green><curer> cured a villager! The discounted prices are now shared with everyone.</green>");
     }
 
+    /**
+     * The cure announcement as legacy text. A template that MiniMessage would reject
+     * (legacy formatting codes) is rendered with those codes stripped, so the broadcast
+     * still goes out.
+     */
+    public String renderAnnouncement(String curer, int synced) {
+        Map<String, String> placeholders = Map.of("curer", curer, "synced", String.valueOf(synced));
+        String template = announceMessage();
+        try {
+            return MiniMessageLegacy.toLegacy(template, placeholders);
+        } catch (IllegalArgumentException e) {
+            // Stripping can join a new code from the leftovers, so repeat until nothing changes;
+            // then drop stray section signs so none can pair up with placeholder text.
+            String stripped = template;
+            String previous;
+            do {
+                previous = stripped;
+                stripped = ChatColor.stripColor(previous);
+            } while (!stripped.equals(previous));
+            stripped = stripped.replace(String.valueOf(ChatColor.COLOR_CHAR), "");
+            return MiniMessageLegacy.toLegacy(stripped, placeholders);
+        }
+    }
+
+    /** Warns once (at enable and reload) instead of on every cure about a bad template. */
+    public void validateAnnounceMessage() {
+        if (!announceEnabled()) {
+            return;
+        }
+        try {
+            MiniMessageLegacy.toLegacy(announceMessage(), Map.of());
+        } catch (IllegalArgumentException e) {
+            plugin.getLogger().warning("announce.message contains legacy formatting codes ("
+                    + ChatColor.COLOR_CHAR + "), which MiniMessage format does not allow; they are dropped"
+                    + " from the broadcast. Use tags like <green> instead.");
+        }
+    }
+
     private boolean debug() {
         return plugin.getConfig().getBoolean("debug", false);
     }
@@ -68,14 +110,14 @@ public final class DiscountService {
     /**
      * The strongest cure gossip on this villager: the maximum across every player's
      * gossip entry, plus whatever this plugin persisted on the villager itself.
-     * Stacked cures (which raise the values further) are picked up automatically.
+     * Repeat cures, by anyone, are picked up automatically.
      */
     public CureGossip bestCureGossip(Villager villager) {
         int major = 0;
         int minor = 0;
-        for (Reputation reputation : villager.getReputations().values()) {
-            major = Math.max(major, reputation.getReputation(ReputationType.MAJOR_POSITIVE));
-            minor = Math.max(minor, reputation.getReputation(ReputationType.MINOR_POSITIVE));
+        for (UUID target : gossipTargets.of(villager)) {
+            major = Math.max(major, villager.getReputation(target, ReputationType.MAJOR_POSITIVE));
+            minor = Math.max(minor, villager.getReputation(target, ReputationType.MINOR_POSITIVE));
         }
         if (persistDiscounts()) {
             PersistentDataContainer pdc = villager.getPersistentDataContainer();
@@ -97,27 +139,31 @@ public final class DiscountService {
         if (best.isEmpty()) {
             return false;
         }
-        Reputation reputation = villager.getReputation(playerId);
-        if (reputation == null) {
-            reputation = new Reputation();
-        }
-        boolean changed = false;
-        if (reputation.getReputation(ReputationType.MAJOR_POSITIVE) < best.majorPositive()) {
-            reputation.setReputation(ReputationType.MAJOR_POSITIVE, best.majorPositive());
-            changed = true;
-        }
-        if (reputation.getReputation(ReputationType.MINOR_POSITIVE) < best.minorPositive()) {
-            reputation.setReputation(ReputationType.MINOR_POSITIVE, best.minorPositive());
-            changed = true;
-        }
-        if (changed) {
-            villager.setReputation(playerId, reputation);
-            if (debug()) {
-                plugin.getLogger().info("Synced cure gossip " + best + " to " + playerId
-                        + " on villager " + villager.getUniqueId());
-            }
+        boolean majorChanged = raise(villager, playerId, ReputationType.MAJOR_POSITIVE, best.majorPositive());
+        boolean minorChanged = raise(villager, playerId, ReputationType.MINOR_POSITIVE, best.minorPositive());
+        boolean changed = majorChanged || minorChanged;
+        if (changed && debug()) {
+            plugin.getLogger().info("Synced cure gossip " + best + " to " + playerId
+                    + " on villager " + villager.getUniqueId());
         }
         return changed;
+    }
+
+    /**
+     * Raises one gossip entry of the player to {@code value} if it is lower.
+     *
+     * Spigot's setter clamps to the gossip type's vanilla maximum and drops values below
+     * the vanilla discard threshold, so the target is capped to the maximum up front and
+     * the entry re-read afterwards: "changed" then means the stored value really moved.
+     */
+    private static boolean raise(Villager villager, UUID playerId, ReputationType type, int value) {
+        int target = Math.min(value, type.getMaxValue());
+        int before = villager.getReputation(playerId, type);
+        if (before >= target) {
+            return false;
+        }
+        villager.setReputation(playerId, type, target);
+        return villager.getReputation(playerId, type) != before;
     }
 
     /** Mirrors the villager's best cure gossip to every online player. */

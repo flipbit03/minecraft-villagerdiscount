@@ -2,8 +2,6 @@ package dev.cadu.villagerdiscount.listener;
 
 import dev.cadu.villagerdiscount.DiscountService;
 import dev.cadu.villagerdiscount.VillagerDiscountPlugin;
-import net.kyori.adventure.text.minimessage.MiniMessage;
-import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Villager;
 import org.bukkit.entity.ZombieVillager;
@@ -54,10 +52,7 @@ public final class CureListener implements Listener {
             }
 
             if (service.announceEnabled()) {
-                plugin.getServer().broadcast(MiniMessage.miniMessage().deserialize(
-                        service.announceMessage(),
-                        Placeholder.unparsed("curer", curer),
-                        Placeholder.unparsed("synced", String.valueOf(synced))));
+                plugin.getServer().broadcastMessage(service.renderAnnouncement(curer, synced));
             }
         }, 1L);
     }
